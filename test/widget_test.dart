@@ -13,11 +13,8 @@ import 'package:grpc_client/utils/qr_scan.dart';
 
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    CameraClient client = CameraClient();
     // Build our app and trigger a frame.
-    await tester.pumpWidget(MyApp(
-      client: client,
-    ));
+    await tester.pumpWidget(const MyApp());
 
     // Verify that our counter starts at 0.
     expect(find.text('0'), findsOneWidget);

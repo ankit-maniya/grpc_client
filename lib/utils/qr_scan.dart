@@ -4,95 +4,107 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:grpc_client/gen/helloword.pbgrpc.dart';
 import 'package:grpc_client/utils/util.dart';
-import 'package:qr_code_scanner/qr_code_scanner.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+// import 'package:qr_code_scanner/qr_code_scanner.dart';
 
 Utils utils = Utils();
 
 class QRScannerPage extends StatefulWidget {
-  final CameraClient client;
-
-  const QRScannerPage({super.key, required this.client});
+  QRScannerPage({super.key}) {
+    log('QRScannerPage initialized');
+  }
 
   @override
   _QRScannerPageState createState() => _QRScannerPageState();
 }
 
 class _QRScannerPageState extends State<QRScannerPage> {
+  final stub = utils.getServerRef();
   final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
-  QRViewController? controller;
+
+  String qrText = '';
+  bool _isProcessing = false;
+  bool _isApiCallInProgress = false;
+  // late MobileScannerController controller;
+  // StreamSubscription<Object?>? _subscription;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('QR Code Scanner')),
-      body: QRView(
-        key: qrKey,
-        onQRViewCreated: _onQRViewCreated,
+      body: Center(
+        // For testing purpose you can use this button to send data to server
+        //   child: ElevatedButton(
+        //     onPressed: () async {
+        //       _onQRViewCreated("ANKIT_MANIYA");
+        //     },
+        //     child: const Text('SEND DATA TO SERVER'),
+        //   ),
+        // ),
+
+        // To test with the QR code scanner use the below code
+        child: MobileScanner(onDetect: (capture) {
+          if (_isApiCallInProgress) return;
+ 
+          final List<Barcode> barcodes = capture.barcodes;
+          log("calling onDetect");
+          for (final barcode in barcodes) {
+            log(barcode.rawValue ?? "No Data found in QR");
+
+            // Process only if not already processing
+            if (!_isProcessing &&
+                !_isApiCallInProgress &&
+                barcode.rawValue != null) {
+              _isProcessing =
+                  true; // Set flag to true to prevent further processing
+
+              qrText = barcode.rawValue.toString();
+              _onQRViewCreated(qrText);
+              break;
+            }
+          }
+        }),
       ),
     );
   }
 
-  void _onQRViewCreated(QRViewController controller) {
-    this.controller = controller;
-    controller.scannedDataStream.listen((scanData) async {
-      final qrCode = scanData.code;
-      log('QR Code detected: $qrCode');
+  void _onQRViewCreated(String rawValue) async {
+    // Exit if an API call is already in progress
+    if (_isApiCallInProgress) return;
 
-      // Send the QR code data back to the server
-      if (qrCode != null) {
-        await widget.client.sendQRCodeData(qrCode, context);
-        if (mounted) {
-          Navigator.pop(context); // Ensure the widget is still mounted
-        }
-      }
+    setState(() {
+      _isApiCallInProgress = true; // Set flag to indicate API call in progress
     });
-  }
+    // final MobileScannerController controller = MobileScannerController();
+    // this.controller = controller;
 
-  @override
-  void dispose() {
-    controller?.dispose();
-    super.dispose();
-  }
-}
+    log("stub $stub");
 
-class CameraClient {
-  final stub = utils.getServerRef();
-
-  CameraClient() {
-    log('CameraClient initialized');
-  }
-
-  Future<bool> startQRCodeScan(BuildContext context) async {
     final response =
         await stub.invokeQRCodeScan(QRScanRequest(requestId: '12345'));
+
     log(response.status);
     if (response.status == 'SCAN_STARTED') {
-      log('QR Code scan started');
-      Timer(const Duration(seconds: 5), () async {
-        log('QR Code scan completed');
+      // // We are not using the controller to scan the QR code in this example but you can use it to scan the QR code
+      // log('QR Code detected From Scan QR code screen!');
 
-        // Show loading dialog
-        _showLoadingDialog(context);
+      _showLoadingDialog(context);
 
-        await sendQRCodeData('THIS_IS_MY_QR_CODE_DATA', context);
+      // Simulate a QR code scan
+      await Future.delayed(const Duration(seconds: 2));
 
-        // Hide loading dialog
-        if (Navigator.canPop(context)) {
-          Navigator.pop(context); // Remove the loading indicator
-        }
-      });
+      await sendQRCodeData(rawValue, context);
+
+      if (mounted) {
+        Navigator.pop(context); // Ensure the widget is still mounted
+        Navigator.pop(context); // Ensure the widget is still mounted
+      }
     }
-    return false;
-  }
 
-  Future<void> sendQRCodeData(String qrCodeData, BuildContext context) async {
-    final response = await stub.sendQRCodeData(QRCodeData(
-      qrCode: qrCodeData,
-      requestId: '12345',
-    ));
-    if (response.status == 'DATA_RECEIVED') {
-      log('QR Code data sent successfully');
-    }
+    setState(() {
+      _isProcessing = false;
+      _isApiCallInProgress = false;
+    });
   }
 
   void _showLoadingDialog(BuildContext context) {
@@ -105,5 +117,15 @@ class CameraClient {
         );
       },
     );
+  }
+
+  Future<void> sendQRCodeData(String qrCodeData, BuildContext context) async {
+    final response = await stub.sendQRCodeData(QRCodeData(
+      qrCode: qrCodeData,
+      requestId: '12345',
+    ));
+    if (response.status == 'DATA_RECEIVED') {
+      log('QR Code data sent successfully');
+    }
   }
 }
